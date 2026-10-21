@@ -15,6 +15,17 @@ local DataStoreService = game:GetService("DataStoreService")
 local MAX_LIVES = 5
 local bestStore = DataStoreService:GetDataStore("FruitBest")
 
+-- 📋 log 開關：想看程式怎麼運作就設 true，看膩了改 false
+local SHOW_LOG = true
+local SHOW_FRUIT_LOG = true     -- 每顆水果出生 / 接到 / 漏接 都印（比較多）
+local function log(...)
+	if SHOW_LOG then print(string.format("[%5.2f秒][伺服器 FruitCatch]", time()), ...) end
+end
+local function fruitLog(...)
+	if SHOW_LOG and SHOW_FRUIT_LOG then print(string.format("[%5.2f秒][伺服器 FruitCatch]", time()), ...) end
+end
+log("① 腳本開始執行（這時候玩家還沒進來）")
+
 -- 水果種類：weight 越大越常出現
 local FRUITS = {
 	{ name = "Apple",      emoji = "🍎", color = Color3.fromRGB(220, 40, 40),  size = 1.6, points = 1, weight = 30 },
@@ -40,6 +51,7 @@ end
 local restartEvent = Instance.new("RemoteEvent")
 restartEvent.Name = "RestartFruit"
 restartEvent.Parent = ReplicatedStorage
+log("② 建立 RemoteEvent：ReplicatedStorage.RestartFruit（給 GUI 的「再玩一次」用）")
 
 local state = {}    -- 每個玩家的狀態
 local fruits = {}   -- 天上正在掉的水果 { [part] = 資料 }
@@ -71,6 +83,7 @@ local function makeBasket()
 	piece(Vector3.new(5, 0.25, 5), CFrame.new(0, BASKET_RIM, 0) * CFrame.new(0, 0, 0), Color3.fromRGB(200, 150, 90))
 	pieces[#pieces].part.Transparency = 0.85                                           -- 籃口只畫淡淡一圈
 	basket.Parent = workspace
+	log("   🧺 籃子做好了：" .. #pieces .. " 塊木板，放進 Workspace")
 	return basket, pieces
 end
 
@@ -114,12 +127,14 @@ local function startGame(player)
 	st.lives.Value = MAX_LIVES
 	st.gameOver.Value = false
 	st.playing = true
+	log("▶ 遊戲開始！", player.Name, "分數歸零、生命 =", st.lives.Value)
 end
 
 local function endGame(player)
 	local st = state[player]
 	st.playing = false
 	st.gameOver.Value = true
+	log("■ 遊戲結束！", player.Name, "最後得分 =", st.score.Value, "最高分 =", st.best.Value)
 	clearFruits()
 	if st.score.Value > st.best.Value then
 		st.best.Value = st.score.Value
@@ -128,7 +143,9 @@ local function endGame(player)
 	end
 end
 
+log("③ 掛好 PlayerAdded 事件，等玩家進來…")
 Players.PlayerAdded:Connect(function(player)
+	log("④ PlayerAdded：玩家", player.Name, "進來了，建立 leaderstats / Lives / GameOver")
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	leaderstats.Parent = player
@@ -138,6 +155,7 @@ Players.PlayerAdded:Connect(function(player)
 	local best = Instance.new("IntValue")
 	best.Name = "Best"
 	best.Value = bestStore:GetAsync(tostring(player.UserId)) or 0
+	log("   從 DataStore 讀到最高分 =", best.Value)
 	best.Parent = leaderstats
 	local lives = Instance.new("IntValue")
 	lives.Name = "Lives"
@@ -150,6 +168,7 @@ Players.PlayerAdded:Connect(function(player)
 	state[player] = { score = score, best = best, lives = lives, gameOver = gameOver, playing = false }
 
 	player.CharacterAdded:Connect(function(character)
+		log("⑤ CharacterAdded：角色", character.Name, "生出來了，幫他戴上籃子")
 		local st = state[player]
 		if st.basket then st.basket:Destroy() end
 		st.basket, st.pieces = makeBasket()
@@ -160,6 +179,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 restartEvent.OnServerEvent:Connect(function(player)
+	log("🔄 收到 GUI 送來的 RestartFruit（玩家按了「再玩一次」）")
 	startGame(player)
 end)
 
@@ -195,9 +215,11 @@ local function spawnFruit(player)
 	gui.Parent = fruit
 	fruit.Parent = workspace
 	fruits[fruit] = { info = f, lastY = fruit.Position.Y }
+	fruitLog(string.format("   %s 出生在 (%.0f, %.0f, %.0f)，往下掉速度 %.1f", f.emoji, fruit.Position.X, fruit.Position.Y, fruit.Position.Z, speed))
 end
 
 -- 每隔一段時間掉一顆，分數越高掉越密
+log("   開始「掉水果」的迴圈（用 task.spawn 另開一條執行緒，才不會卡住下面的程式）")
 task.spawn(function()
 	while true do
 		local interval = 1
@@ -212,7 +234,13 @@ task.spawn(function()
 end)
 
 ---------------------------------------------------------------- 每格：籃子跟著頭、檢查接到沒
-RunService.Heartbeat:Connect(function()
+local firstBeat = true
+log("   掛好 Heartbeat（每一格畫面都會跑一次：讓籃子跟著頭、檢查有沒有接到）")
+RunService.Heartbeat:Connect(function(dt)
+	if firstBeat then
+		firstBeat = false
+		log("   第一次 Heartbeat，這一格經過", string.format("%.3f", dt), "秒（之後每格都會跑，但不再印，免得洗版）")
+	end
 	for player, st in pairs(state) do
 		-- 籃子黏在頭頂
 		if st.head and st.head.Parent and st.pieces then
@@ -250,6 +278,7 @@ RunService.Heartbeat:Connect(function()
 			fruits[fruit] = nil
 			fruit:Destroy()
 			if f.bad then
+				fruitLog("   💥 接到炸彈！生命", st.lives.Value, "→", st.lives.Value - 1)
 				st.lives.Value -= 1
 				popup(st.pieces[1].part, "💥 -1 ❤", Color3.fromRGB(255, 80, 80))
 				local boom = Instance.new("Explosion")
@@ -260,15 +289,18 @@ RunService.Heartbeat:Connect(function()
 				if st.lives.Value <= 0 then endGame(caughtBy) end
 			else
 				st.score.Value += f.points
+				fruitLog("   ✅ 接到", f.emoji, "+" .. f.points, "分，現在", st.score.Value, "分")
 				popup(st.pieces[1].part, "+" .. f.points .. " " .. f.emoji, Color3.fromRGB(255, 230, 80))
 			end
 		elseif pos.Y < 2.5 then
 			-- 掉到地上：好水果沒接到要扣命，炸彈掉地上沒事
 			fruits[fruit] = nil
 			fruit:Destroy()
+			if data.info.bad then fruitLog("   💣 炸彈掉到地上，沒事") end
 			if not data.info.bad then
 				for player, st in pairs(state) do
 					if st.playing then
+						fruitLog("   ❌ 漏接", data.info.emoji, "掉到地上，生命", st.lives.Value, "→", st.lives.Value - 1)
 						st.lives.Value -= 1
 						if st.lives.Value <= 0 then endGame(player) end
 					end
@@ -283,6 +315,12 @@ end)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
+
+local SHOW_LOG = true
+local function log(...)
+	if SHOW_LOG then print(string.format("[%5.2f秒][畫面 FruitGui]", time()), ...) end
+end
+log("Ⓐ LocalScript 開始執行（玩家進來後才會跑），LocalPlayer =", player.Name)
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "FruitGui"
@@ -363,13 +401,16 @@ hint.Text = "點一下畫面，用 WASD 移動接水果！小心 💣"
 hint.Parent = gui
 Instance.new("UICorner", hint)
 task.delay(5, function() hint.Visible = false end)
+log("Ⓑ 畫面元件都建好了（分數框、愛心、遊戲結束視窗、提示）")
 
 -- 數值變了就更新畫面
+log("Ⓒ 用 WaitForChild 等伺服器建立 leaderstats…")
 local leaderstats = player:WaitForChild("leaderstats")
 local score = leaderstats:WaitForChild("Score")
 local best = leaderstats:WaitForChild("Best")
 local lives = player:WaitForChild("Lives")
 local gameOver = player:WaitForChild("GameOver")
+log("Ⓓ 等到了！Score / Best / Lives / GameOver 都拿到，開始監聽 .Changed")
 
 local function refresh()
 	scoreLabel.Text = "🧺 " .. score.Value
@@ -381,13 +422,15 @@ local function refresh()
 end
 score.Changed:Connect(refresh)
 best.Changed:Connect(refresh)
-lives.Changed:Connect(refresh)
-gameOver.Changed:Connect(refresh)
+lives.Changed:Connect(function(v) log("Lives.Changed → 畫面愛心更新為", v) refresh() end)
+gameOver.Changed:Connect(function(v) log("GameOver.Changed →", v and "顯示「遊戲結束」視窗" or "隱藏「遊戲結束」視窗") refresh() end)
 refresh()
 
 again.MouseButton1Click:Connect(function()
+	log("按了「再玩一次」→ 用 RemoteEvent:FireServer() 通知伺服器")
 	ReplicatedStorage:WaitForChild("RestartFruit"):FireServer()
 end)
+log("Ⓔ GUI 準備完成，接下來就是等事件發生")
 ` },
     { name: 'Hello', type: 'Script', parent: 'ServerStorage', source: `
 -- 這支 Hello 放在 ServerStorage，所以按執行時「不會」跑。
