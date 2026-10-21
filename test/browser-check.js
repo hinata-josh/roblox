@@ -59,7 +59,7 @@ const ok = (cond, name, extra) => { if (cond) { pass++; console.log('  ✓ ' + n
     }
 
     console.log('▶ 角色操作');
-    await evaluate(`(()=>{const st=__studio; st.loadProject(st.fromExample(EXAMPLES[1]), false); st.startRun(); return 1})()`);
+    await evaluate(`(()=>{const st=__studio; st.loadProject(st.fromExample(EXAMPLES.find(e=>/彩虹/.test(e.title))), false); st.startRun(); return 1})()`);
     await sleep(1200);
     const p0 = await evaluate(`(()=>{const r=__studio.S.rt.char.findChild('HumanoidRootPart').p.CFrame; return [r.x,r.y,r.z]})()`);
     await evaluate(`(()=>{const v=document.querySelector('#view'); v.focus(); v.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',bubbles:true})); return 1})()`);
@@ -80,7 +80,7 @@ const ok = (cond, name, extra) => { if (cond) { pass++; console.log('  ✓ ' + n
     await evaluate('__studio.stopRun()');
 
     console.log('▶ 除錯器：中斷點 / 單步 / 監看 / 指令列');
-    await evaluate(`(()=>{const st=__studio; st.loadProject(st.fromExample(EXAMPLES[0]), false); return 1})()`);
+    await evaluate(`(()=>{const st=__studio; st.loadProject(st.fromExample(EXAMPLES.find(e=>/Hello/.test(e.title))), false); return 1})()`);
     const line = await evaluate(`__studio.project().scripts[0].source.split('\\n').findIndex(l=>l.includes('local result = n * n'))+1`);
     ok(line > 0, '找到要設中斷點的行 ' + line);
     await evaluate(`(()=>{const s=__studio.project().scripts[0]; __studio.toggleBp(s.id, ${line}); return 1})()`);

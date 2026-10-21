@@ -1,6 +1,402 @@
 /* examples.js — 內建範例專案 */
 window.EXAMPLES = [
 {
+  title: '🧺 接水果：頭頂籃子接住天上的水果',
+  desc: '控制角色、籃子跟著頭走、隨機水果、計分、生命、炸彈、最高分存檔',
+  scripts: [
+    { name: 'FruitCatch', type: 'Script', parent: 'ServerScriptService', source: `
+-- 🧺 接水果：角色頭上頂著籃子，接住天上掉下來的水果得分！
+-- 操作：點一下 3D 畫面，WASD 移動、空白鍵跳。小心 💣 炸彈！
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+local MAX_LIVES = 5
+local bestStore = DataStoreService:GetDataStore("FruitBest")
+
+-- 水果種類：weight 越大越常出現
+local FRUITS = {
+	{ name = "Apple",      emoji = "🍎", color = Color3.fromRGB(220, 40, 40),  size = 1.6, points = 1, weight = 30 },
+	{ name = "Orange",     emoji = "🍊", color = Color3.fromRGB(255, 150, 30), size = 1.6, points = 1, weight = 25 },
+	{ name = "Banana",     emoji = "🍌", color = Color3.fromRGB(250, 220, 60), size = 1.5, points = 2, weight = 15 },
+	{ name = "Grape",      emoji = "🍇", color = Color3.fromRGB(130, 60, 170), size = 1.4, points = 3, weight = 12 },
+	{ name = "Watermelon", emoji = "🍉", color = Color3.fromRGB(60, 170, 70),  size = 2.4, points = 5, weight = 6 },
+	{ name = "Bomb",       emoji = "💣", color = Color3.fromRGB(30, 30, 30),   size = 1.8, points = 0, weight = 12, bad = true },
+}
+local totalWeight = 0
+for _, f in ipairs(FRUITS) do totalWeight += f.weight end
+
+local function randomFruit()
+	local r = math.random() * totalWeight
+	for _, f in ipairs(FRUITS) do
+		r -= f.weight
+		if r <= 0 then return f end
+	end
+	return FRUITS[1]
+end
+
+-- 遊戲重來用的 RemoteEvent（GUI 的「再玩一次」按鈕會呼叫）
+local restartEvent = Instance.new("RemoteEvent")
+restartEvent.Name = "RestartFruit"
+restartEvent.Parent = ReplicatedStorage
+
+local state = {}    -- 每個玩家的狀態
+local fruits = {}   -- 天上正在掉的水果 { [part] = 資料 }
+
+---------------------------------------------------------------- 籃子
+local BASKET_HALF = 2.2      -- 籃子內寬的一半
+local BASKET_BOTTOM = 0.65   -- 籃底在頭頂上方多高
+local BASKET_RIM = 2.3       -- 籃口高度
+
+local function makeBasket()
+	local basket = Instance.new("Model")
+	basket.Name = "Basket"
+	local pieces = {}
+	local function piece(size, offset, color)
+		local p = Instance.new("Part")
+		p.Size = size
+		p.Color = color or Color3.fromRGB(160, 110, 60)
+		p.Material = Enum.Material.WoodPlanks
+		p.Anchored = true
+		p.CanCollide = false
+		p.Parent = basket
+		table.insert(pieces, { part = p, offset = offset })
+	end
+	piece(Vector3.new(4.6, 0.3, 4.6), CFrame.new(0, BASKET_BOTTOM, 0))                -- 底
+	piece(Vector3.new(4.6, 1.6, 0.3), CFrame.new(0, 1.5, 2.15))                         -- 前
+	piece(Vector3.new(4.6, 1.6, 0.3), CFrame.new(0, 1.5, -2.15))                        -- 後
+	piece(Vector3.new(0.3, 1.6, 4.6), CFrame.new(2.15, 1.5, 0))                         -- 左
+	piece(Vector3.new(0.3, 1.6, 4.6), CFrame.new(-2.15, 1.5, 0))                        -- 右
+	piece(Vector3.new(5, 0.25, 5), CFrame.new(0, BASKET_RIM, 0) * CFrame.new(0, 0, 0), Color3.fromRGB(200, 150, 90))
+	pieces[#pieces].part.Transparency = 0.85                                           -- 籃口只畫淡淡一圈
+	basket.Parent = workspace
+	return basket, pieces
+end
+
+---------------------------------------------------------------- 計分小動畫
+local function popup(part, text, color)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.new(0, 120, 0, 40)
+	gui.StudsOffset = Vector3.new(0, 3, 0)
+	gui.AlwaysOnTop = true
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0.3
+	label.Parent = gui
+	gui.Parent = part
+	task.spawn(function()
+		for i = 1, 20 do
+			gui.StudsOffset = Vector3.new(0, 3 + i * 0.12, 0)
+			label.TextTransparency = i / 20
+			task.wait(0.03)
+		end
+		gui:Destroy()
+	end)
+end
+
+---------------------------------------------------------------- 玩家
+local function clearFruits()
+	for fruit in pairs(fruits) do fruit:Destroy() end
+	fruits = {}
+end
+
+local function startGame(player)
+	local st = state[player]
+	if not st then return end
+	clearFruits()
+	st.score.Value = 0
+	st.lives.Value = MAX_LIVES
+	st.gameOver.Value = false
+	st.playing = true
+end
+
+local function endGame(player)
+	local st = state[player]
+	st.playing = false
+	st.gameOver.Value = true
+	clearFruits()
+	if st.score.Value > st.best.Value then
+		st.best.Value = st.score.Value
+		bestStore:SetAsync(tostring(player.UserId), st.best.Value)
+		print("🏆 新紀錄！", st.best.Value)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+	local score = Instance.new("IntValue")
+	score.Name = "Score"
+	score.Parent = leaderstats
+	local best = Instance.new("IntValue")
+	best.Name = "Best"
+	best.Value = bestStore:GetAsync(tostring(player.UserId)) or 0
+	best.Parent = leaderstats
+	local lives = Instance.new("IntValue")
+	lives.Name = "Lives"
+	lives.Value = MAX_LIVES
+	lives.Parent = player
+	local gameOver = Instance.new("BoolValue")
+	gameOver.Name = "GameOver"
+	gameOver.Parent = player
+
+	state[player] = { score = score, best = best, lives = lives, gameOver = gameOver, playing = false }
+
+	player.CharacterAdded:Connect(function(character)
+		local st = state[player]
+		if st.basket then st.basket:Destroy() end
+		st.basket, st.pieces = makeBasket()
+		st.head = character:WaitForChild("Head")
+		character:WaitForChild("Humanoid").WalkSpeed = 22   -- 跑快一點比較好接
+		if not st.playing and not st.gameOver.Value then startGame(player) end
+	end)
+end)
+
+restartEvent.OnServerEvent:Connect(function(player)
+	startGame(player)
+end)
+
+---------------------------------------------------------------- 掉水果
+local function spawnFruit(player)
+	local st = state[player]
+	if not st.head or not st.head.Parent then return end
+	local f = randomFruit()
+	local speed = math.min(16 + st.score.Value * 0.35, 42)   -- 分數越高掉越快
+	local center = st.head.Position
+	local fruit = Instance.new("Part")
+	fruit.Name = f.name
+	fruit.Shape = Enum.PartType.Ball
+	fruit.Size = Vector3.new(f.size, f.size, f.size)
+	fruit.Color = f.color
+	fruit.Material = f.bad and Enum.Material.Metal or Enum.Material.SmoothPlastic
+	fruit.CanCollide = false
+	fruit.Position = Vector3.new(center.X + math.random(-16, 16), center.Y + 45, center.Z + math.random(-16, 16))
+	-- 用 BodyVelocity 讓水果等速往下掉（不然重力太快很難接）
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = Vector3.new(0, -speed, 0)
+	bv.Parent = fruit
+	-- 水果上面放一個表情符號，比較好認
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.new(f.size * 1.4, 0, f.size * 1.4, 0)
+	gui.AlwaysOnTop = true
+	local icon = Instance.new("TextLabel")
+	icon.Size = UDim2.new(1, 0, 1, 0)
+	icon.BackgroundTransparency = 1
+	icon.Text = f.emoji
+	icon.TextScaled = true
+	icon.Parent = gui
+	gui.Parent = fruit
+	fruit.Parent = workspace
+	fruits[fruit] = { info = f, lastY = fruit.Position.Y }
+end
+
+-- 每隔一段時間掉一顆，分數越高掉越密
+task.spawn(function()
+	while true do
+		local interval = 1
+		for player, st in pairs(state) do
+			if st.playing then
+				spawnFruit(player)
+				interval = math.max(0.35, 1 - st.score.Value * 0.012)
+			end
+		end
+		task.wait(interval)
+	end
+end)
+
+---------------------------------------------------------------- 每格：籃子跟著頭、檢查接到沒
+RunService.Heartbeat:Connect(function()
+	for player, st in pairs(state) do
+		-- 籃子黏在頭頂
+		if st.head and st.head.Parent and st.pieces then
+			local headCF = st.head.CFrame * CFrame.new(0, 0.5, 0)
+			for _, p in ipairs(st.pieces) do
+				p.part.CFrame = headCF * p.offset
+			end
+			st.bottomY = headCF.Y + BASKET_BOTTOM
+			st.rimY = headCF.Y + BASKET_RIM
+			st.center = headCF.Position
+		end
+	end
+
+	for fruit, data in pairs(fruits) do
+		if not fruit.Parent then
+			fruits[fruit] = nil
+			continue
+		end
+		local pos = fruit.Position
+		local caughtBy = nil
+		for player, st in pairs(state) do
+			if st.playing and st.center then
+				local inside = math.abs(pos.X - st.center.X) < BASKET_HALF and math.abs(pos.Z - st.center.Z) < BASKET_HALF
+				-- 這一格和上一格之間有穿過籃子的高度範圍 → 接到了（掉很快也不會漏接）
+				if inside and pos.Y <= st.rimY and data.lastY >= st.bottomY then
+					caughtBy = player
+				end
+			end
+		end
+		data.lastY = pos.Y
+
+		if caughtBy then
+			local st = state[caughtBy]
+			local f = data.info
+			fruits[fruit] = nil
+			fruit:Destroy()
+			if f.bad then
+				st.lives.Value -= 1
+				popup(st.pieces[1].part, "💥 -1 ❤", Color3.fromRGB(255, 80, 80))
+				local boom = Instance.new("Explosion")
+				boom.Position = st.center + Vector3.new(0, 2, 0)
+				boom.BlastPressure = 0
+				boom.DestroyJointRadiusPercent = 0
+				boom.Parent = workspace
+				if st.lives.Value <= 0 then endGame(caughtBy) end
+			else
+				st.score.Value += f.points
+				popup(st.pieces[1].part, "+" .. f.points .. " " .. f.emoji, Color3.fromRGB(255, 230, 80))
+			end
+		elseif pos.Y < 2.5 then
+			-- 掉到地上：好水果沒接到要扣命，炸彈掉地上沒事
+			fruits[fruit] = nil
+			fruit:Destroy()
+			if not data.info.bad then
+				for player, st in pairs(state) do
+					if st.playing then
+						st.lives.Value -= 1
+						if st.lives.Value <= 0 then endGame(player) end
+					end
+				end
+			end
+		end
+	end
+end)
+` },
+    { name: 'FruitGui', type: 'LocalScript', parent: 'StarterPlayerScripts', source: `
+-- 畫面上的分數、生命、遊戲結束視窗
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "FruitGui"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- 左上角：分數和愛心
+local panel = Instance.new("Frame")
+panel.Position = UDim2.new(0, 12, 0, 12)
+panel.Size = UDim2.new(0, 230, 0, 86)
+panel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+panel.BackgroundTransparency = 0.25
+panel.Parent = gui
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+local scoreLabel = Instance.new("TextLabel")
+scoreLabel.Size = UDim2.new(1, -16, 0, 44)
+scoreLabel.Position = UDim2.new(0, 8, 0, 4)
+scoreLabel.BackgroundTransparency = 1
+scoreLabel.Font = Enum.Font.GothamBold
+scoreLabel.TextScaled = true
+scoreLabel.TextXAlignment = Enum.TextXAlignment.Left
+scoreLabel.TextColor3 = Color3.fromRGB(255, 230, 90)
+scoreLabel.Text = "🧺 0"
+scoreLabel.Parent = panel
+
+local heartLabel = Instance.new("TextLabel")
+heartLabel.Size = UDim2.new(1, -16, 0, 30)
+heartLabel.Position = UDim2.new(0, 8, 0, 50)
+heartLabel.BackgroundTransparency = 1
+heartLabel.TextScaled = true
+heartLabel.TextXAlignment = Enum.TextXAlignment.Left
+heartLabel.Text = ""
+heartLabel.Parent = panel
+
+-- 中間：遊戲結束
+local over = Instance.new("Frame")
+over.AnchorPoint = Vector2.new(0.5, 0.5)
+over.Position = UDim2.new(0.5, 0, 0.5, 0)
+over.Size = UDim2.new(0, 300, 0, 190)
+over.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+over.BackgroundTransparency = 0.1
+over.Visible = false
+over.Parent = gui
+Instance.new("UICorner", over).CornerRadius = UDim.new(0, 16)
+
+local overText = Instance.new("TextLabel")
+overText.Size = UDim2.new(1, -20, 0, 100)
+overText.Position = UDim2.new(0, 10, 0, 10)
+overText.BackgroundTransparency = 1
+overText.TextColor3 = Color3.new(1, 1, 1)
+overText.Font = Enum.Font.GothamBold
+overText.TextScaled = true
+overText.TextWrapped = true
+overText.Parent = over
+
+local again = Instance.new("TextButton")
+again.Size = UDim2.new(0, 200, 0, 50)
+again.Position = UDim2.new(0.5, -100, 1, -66)
+again.BackgroundColor3 = Color3.fromRGB(60, 190, 90)
+again.TextColor3 = Color3.new(1, 1, 1)
+again.Font = Enum.Font.GothamBold
+again.TextSize = 22
+again.Text = "🔄 再玩一次"
+again.Parent = over
+Instance.new("UICorner", again).CornerRadius = UDim.new(0, 10)
+
+-- 開場提示
+local hint = Instance.new("TextLabel")
+hint.AnchorPoint = Vector2.new(0.5, 0)
+hint.Position = UDim2.new(0.5, 0, 0, 110)
+hint.Size = UDim2.new(0, 420, 0, 40)
+hint.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+hint.BackgroundTransparency = 0.4
+hint.TextColor3 = Color3.new(1, 1, 1)
+hint.TextScaled = true
+hint.Text = "點一下畫面，用 WASD 移動接水果！小心 💣"
+hint.Parent = gui
+Instance.new("UICorner", hint)
+task.delay(5, function() hint.Visible = false end)
+
+-- 數值變了就更新畫面
+local leaderstats = player:WaitForChild("leaderstats")
+local score = leaderstats:WaitForChild("Score")
+local best = leaderstats:WaitForChild("Best")
+local lives = player:WaitForChild("Lives")
+local gameOver = player:WaitForChild("GameOver")
+
+local function refresh()
+	scoreLabel.Text = "🧺 " .. score.Value
+	heartLabel.Text = string.rep("❤️", lives.Value) .. string.rep("🤍", math.max(0, 5 - lives.Value))
+	over.Visible = gameOver.Value
+	if gameOver.Value then
+		overText.Text = "遊戲結束！\\n得分 " .. score.Value .. "\\n最高 " .. best.Value
+	end
+end
+score.Changed:Connect(refresh)
+best.Changed:Connect(refresh)
+lives.Changed:Connect(refresh)
+gameOver.Changed:Connect(refresh)
+refresh()
+
+again.MouseButton1Click:Connect(function()
+	ReplicatedStorage:WaitForChild("RestartFruit"):FireServer()
+end)
+` },
+    { name: 'Hello', type: 'Script', parent: 'ServerStorage', source: `
+-- 這支 Hello 放在 ServerStorage，所以按執行時「不會」跑。
+-- 想再跑它：在檔案總管點 Hello，屬性面板把 Parent 改回 ServerScriptService。
+print("Hello, Luau!")
+` },
+  ],
+},
+{
   title: '👋 第一支程式：Hello Luau',
   desc: 'print、變數、迴圈、函式、表格 — 適合先試中斷點',
   scripts: [{ name: 'Hello', type: 'Script', parent: 'ServerScriptService', source: `

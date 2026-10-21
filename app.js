@@ -1,4 +1,4 @@
-/* app.js — Luau 工作室介面：程式編輯器、檔案總管/屬性、除錯面板、3D 畫面(Three.js)、GUI 疊圖 */
+/* app.js — Roblox 工作室介面：程式編輯器、檔案總管/屬性、除錯面板、3D 畫面(Three.js)、GUI 疊圖 */
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1724,7 +1724,7 @@ $('#fileIn').onchange = async (e) => {
   if (fileMode === 'lua') { addScript('Script', 'ServerScriptService', f.name.replace(/\.(lua|luau|txt)$/i, '').replace(/[.\s]+/g, '_') || 'Script', text); return; }
   try {
     const j = JSON.parse(text);
-    if (!Array.isArray(j.scripts)) throw new Error('不是 Luau 工作室的專案檔');
+    if (!Array.isArray(j.scripts)) throw new Error('不是 Roblox 工作室的專案檔');
     loadProject({ name: j.name || f.name, scripts: j.scripts.map(s => ({ id: newId(), name: String(s.name || 'Script'), type: ['Script', 'LocalScript', 'ModuleScript'].includes(s.type) ? s.type : 'Script', parent: PARENTS.includes(s.parent) ? s.parent : 'ServerScriptService', source: String(s.source || ''), bps: Array.isArray(s.bps) ? s.bps : [] })) }, true);
   } catch (err) { toast('匯入失敗：' + err.message); }
 };
@@ -1773,7 +1773,7 @@ for (const id of openIds) openScript(id, false);
 if (ui.active && scriptById(ui.active)) openScript(ui.active, false);
 renderTabs(); renderBps(); renderWatches();
 setMode('edit');
-sys('歡迎使用 Luau 工作室！按 ▶ 執行（F5）跑程式；在行號左邊點一下可以設中斷點。左上「📚 範例」有很多可以玩的範例。');
+sys('歡迎使用 Roblox 工作室！按 ▶ 執行（F5）跑程式；在行號左邊點一下可以設中斷點。左上「📚 範例」有很多可以玩的範例。');
 requestAnimationFrame(loop);
 window.__studio = { S, project: () => project, startRun, stopRun, resume, out, V, GUI, openScript, toggleBp, loadProject, fromExample, runCommand, evalWatch };
 })();

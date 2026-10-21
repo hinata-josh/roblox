@@ -1,11 +1,11 @@
-# Luau 工作室（網頁版 Roblox 風格編輯器）
+# Roblox 工作室（網頁版 Roblox 風格編輯器）
 
 在瀏覽器裡寫 Roblox 的 Luau 程式 → 按 **F5 執行** → 右邊 3D 畫面立刻看到結果；可以設**中斷點、單步執行、看變數**。
 純前端、免安裝、離線可用（Three.js 已放在 `vendor/`），也可以直接放上 GitHub Pages。
 
 ## 開啟
-- Windows：雙擊 `開啟 Luau工作室.bat`（Chrome app 視窗）
-- macOS：雙擊 `開啟Luau工作室.command`
+- Windows：雙擊 `開啟 Roblox工作室.bat`（Chrome app 視窗）
+- macOS：雙擊 `開啟Roblox工作室.command`
 - 或直接用瀏覽器打開 `index.html`；放上 GitHub Pages 就是線上版
 
 ## 功能
@@ -14,7 +14,7 @@
 - **除錯**：中斷點、F10 下一行 / F11 進入 / Shift+F11 跳出、變數面板（表格和 Instance 可展開）、監看運算式、滑鼠移到變數上看值、呼叫堆疊、「出錯時暫停」、暫停時用指令列改變數
 - **輸出**：Roblox 格式的錯誤＋堆疊（可點擊跳行）、**中文錯誤提示**、重複訊息合併
 - **檔案總管 / 屬性**：即時的 Instance 樹，執行中可直接改屬性
-- **9 個範例**：Hello、彩虹階梯、熔岩金幣排行榜、Tween 移動平台、ClickDetector+GUI、除錯練習、OOP 模組、鍵盤控制+爆炸、跑酷計時
+- **10 個範例**：接水果(頭頂籃子)、Hello、彩虹階梯、熔岩金幣排行榜、Tween 移動平台、ClickDetector+GUI、除錯練習、OOP 模組、鍵盤控制+爆炸、跑酷計時
 
 ## 架構
 | 檔案 | 內容 |
