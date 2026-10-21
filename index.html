@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Luau 工作室</title>
+<meta name="description" content="網頁版 Roblox 風格 Luau 編輯器：寫程式、按執行、設中斷點單步除錯，3D 畫面即時看到結果。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='48' height='48' rx='8' transform='rotate(15 32 32)' fill='%2300a2ff'/%3E%3Crect x='26' y='26' width='12' height='12' transform='rotate(15 32 32)' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #1e1f22; --panel: #2b2d31; --panel2: #232428; --line: #3a3c42; --text: #e3e3e6; --dim: #9a9ca3; --faint: #6b6e76;
+  --accent: #00a2ff; --accent2: #3b82f6; --ok: #3fb950; --warn: #f0a33a; --err: #ff5c5c; --info: #6cb6ff;
+  --hl-line: rgba(255, 214, 0, .16); --hl-err: rgba(255, 70, 70, .16);
+  --code-bg: #1b1c1f; --gutter: #1f2023;
+  --mono: "Cascadia Mono", Consolas, "Menlo", "SFMono-Regular", "Courier New", monospace;
+  --ui: "Segoe UI", system-ui, -apple-system, "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --fs: 14px; --lh: 20px;
+  --left-w: 250px; --right-w: 46%; --bottom-h: 230px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 var(--ui); overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.app { display: grid; height: 100vh; height: 100dvh; grid-template-rows: auto 1fr; }
+
+/* ---- 工具列 ---- */
+.bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: #26272b; border-bottom: 1px solid var(--line); flex-wrap: wrap; min-width: 0; }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-right: 8px; white-space: nowrap; }
+.logo i { width: 20px; height: 20px; border-radius: 4px; background: var(--accent); transform: rotate(15deg); display: inline-grid; place-items: center; }
+.logo i::after { content: ''; width: 6px; height: 6px; background: #fff; }
+.tb { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; white-space: nowrap; }
+.tb:hover:not(:disabled) { background: #34363c; }
+.tb:disabled { opacity: .35; cursor: default; }
+.tb.run { background: #1f6f3a; border-color: #2c8a4c; font-weight: 600; }
+.tb.run:hover { background: #24834a; }
+.tb.stop { background: #7a2526; border-color: #9a3536; font-weight: 600; }
+.tb.stop:hover { background: #8e2c2d; }
+.tb .k { font-size: 10px; color: var(--dim); }
+.sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.chk { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; color: var(--dim); white-space: nowrap; cursor: pointer; }
+.state { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #34363c; font-size: 12px; white-space: nowrap; }
+.state::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.state.running::before { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.state.paused::before { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.menu { position: relative; }
+.menu-list { position: absolute; top: 34px; left: 0; z-index: 50; min-width: 260px; background: #2f3136; border: 1px solid #45474e; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; display: none; max-height: 70vh; overflow: auto; }
+.menu.open .menu-list { display: block; }
+.menu-list button { display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; background: none; border-radius: 6px; }
+.menu-list button:hover { background: #3c3f45; }
+.menu-list small { display: block; color: var(--dim); font-size: 11px; }
+.menu-list hr { border: 0; border-top: 1px solid #45474e; margin: 4px 0; }
+
+/* ---- 主要版面 ---- */
+.main { display: grid; min-height: 0; grid-template-columns: var(--left-w) 4px 1fr 4px var(--right-w); grid-template-rows: 1fr 4px var(--bottom-h); grid-template-areas: "left sl center sr right" "left sl sb sb sb" "left sl bottom bottom bottom"; }
+.left { grid-area: left; display: grid; grid-template-rows: 1fr auto 40%; min-height: 0; background: var(--panel2); border-right: 1px solid var(--line); }
+.center { grid-area: center; display: grid; grid-template-rows: auto 1fr auto; min-width: 0; min-height: 0; background: var(--code-bg); }
+.right { grid-area: right; position: relative; min-width: 0; min-height: 0; background: #000; }
+.bottom { grid-area: bottom; display: grid; grid-template-rows: auto 1fr; min-height: 0; background: var(--panel2); border-top: 1px solid var(--line); }
+.split-v { cursor: col-resize; background: var(--line); }
+.split-v:hover, .split-h:hover { background: var(--accent); }
+.split-h { grid-area: sb; cursor: row-resize; background: var(--line); }
+#splitL { grid-area: sl; }
+#splitR { grid-area: sr; }
+.ptitle { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-weight: 600; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--line); background: var(--panel); }
+.ptitle .sp { flex: 1; }
+.ibtn { border: 0; background: none; padding: 2px 6px; border-radius: 4px; color: var(--dim); }
+.ibtn:hover { background: #3c3f45; color: var(--text); }
+
+/* ---- 檔案總管 ---- */
+.tree { overflow: auto; padding: 4px 0; min-height: 0; }
+.node { display: flex; align-items: center; gap: 4px; padding: 2px 6px 2px 0; white-space: nowrap; cursor: default; border-radius: 4px; margin: 0 4px; }
+.node:hover { background: #2f3136; }
+.node.sel { background: #26476e; }
+.node .tw { width: 16px; text-align: center; color: var(--faint); flex: none; cursor: pointer; font-size: 10px; }
+.node .ic { width: 18px; text-align: center; flex: none; font-size: 13px; }
+.node .nm { overflow: hidden; text-overflow: ellipsis; }
+.node .cls { color: var(--faint); font-size: 11px; margin-left: 4px; }
+.node .acts { margin-left: auto; display: none; gap: 2px; }
+.node:hover .acts, .node.sel .acts { display: inline-flex; }
+.node .acts button { border: 0; background: #3c3f45; border-radius: 4px; padding: 0 5px; font-size: 11px; color: var(--text); }
+.node .acts button:hover { background: var(--accent2); }
+.node.script .nm { color: #ffd479; }
+.props { overflow: auto; min-height: 0; }
+.prop { display: grid; grid-template-columns: 42% 58%; border-bottom: 1px solid #2c2e33; min-height: 24px; align-items: center; }
+.prop > span { padding: 3px 8px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop > div { padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+.prop input, .prop select { width: 100%; background: #1b1c1f; border: 1px solid #3a3c42; border-radius: 3px; padding: 1px 4px; font-family: var(--mono); font-size: 12px; }
+.prop input[type=checkbox] { width: auto; }
+.prop input[type=color] { padding: 0; height: 20px; }
+.prop .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 5px; border: 1px solid #0006; }
+.prop-sec { padding: 4px 8px; background: #2a2c30; color: var(--faint); font-size: 11px; font-weight: 600; }
+.empty { padding: 14px; color: var(--faint); text-align: center; }
+
+/* ---- 編輯器 ---- */
+.tabs { display: flex; overflow-x: auto; background: var(--panel2); border-bottom: 1px solid var(--line); min-height: 34px; scrollbar-width: thin; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; border-right: 1px solid var(--line); white-space: nowrap; cursor: pointer; color: var(--dim); height: 34px; }
+.tab.on { background: var(--code-bg); color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
+.tab .x { border: 0; background: none; color: var(--faint); border-radius: 4px; padding: 0 4px; }
+.tab .x:hover { background: #3c3f45; color: var(--text); }
+.tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--err); display: none; }
+.tab.haserr .dot { display: inline-block; }
+.edhost { position: relative; min-height: 0; }
+.ed { position: absolute; inset: 0; overflow: auto; display: none; }
+.ed.on { display: block; }
+.ed-inner { display: flex; min-height: 100%; min-width: 100%; width: max-content; }
+.ed-gutter { position: sticky; left: 0; z-index: 3; flex: none; background: var(--gutter); border-right: 1px solid #2c2e33; padding: 6px 0 40vh; font: var(--fs)/var(--lh) var(--mono); color: #5c6068; user-select: none; }
+.gl { position: relative; height: var(--lh); padding: 0 10px 0 22px; text-align: right; cursor: pointer; min-width: 58px; }
+.gl:hover::before { content: ''; position: absolute; left: 6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: rgba(255,80,80,.35); }
+.gl.bp::before { content: ''; position: absolute; left: 6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 1px #0008; }
+.gl.cur { color: #ffd60a; }
+.gl.cur::after { content: '➜'; position: absolute; left: 4px; top: 0; color: #ffd60a; font-size: 13px; }
+.gl.errl { color: var(--err); }
+.ed-code { position: relative; flex: 1; padding: 6px 0 40vh 10px; min-width: 0; }
+.ed-hl, .ed-ta { font: var(--fs)/var(--lh) var(--mono); tab-size: 4; -moz-tab-size: 4; white-space: pre; margin: 0; padding: 0; border: 0; letter-spacing: 0; }
+.ed-hl { position: relative; pointer-events: none; color: #d4d4d4; min-height: var(--lh); padding-right: 60px; }
+.ed-ta { position: absolute; top: 6px; left: 10px; right: 0; bottom: 0; resize: none; outline: none; background: transparent; color: transparent; caret-color: #fff; overflow: hidden; z-index: 2; }
+.ed-ta::selection { background: rgba(70,130,255,.38); color: transparent; }
+.ed-layer { position: absolute; left: 0; right: 0; top: 6px; pointer-events: none; }
+.ed-layer div { position: absolute; left: 0; right: 0; height: var(--lh); }
+.ed-layer .cur { background: var(--hl-line); border-left: 3px solid #ffd60a; }
+.ed-layer .err { background: var(--hl-err); border-bottom: 1px dashed var(--err); }
+.ed-layer .act { background: rgba(255,255,255,.035); }
+.t-kw { color: #f86d7c; font-weight: 600; }
+.t-str { color: #adf195; }
+.t-num { color: #ffc600; }
+.t-com { color: #6f7680; font-style: italic; }
+.t-bi { color: #84d6f7; }
+.t-rb { color: #84d6f7; font-weight: 600; }
+.t-fn { color: #fdfbac; }
+.t-prop { color: #61a1f1; }
+.t-op { color: #cccccc; }
+.t-self { color: #f86d7c; }
+.t-bool { color: #ffc600; }
+.status { display: flex; gap: 12px; align-items: center; padding: 3px 10px; font-size: 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--dim); min-height: 24px; white-space: nowrap; overflow: hidden; }
+.status .syn.ok { color: var(--ok); }
+.status .syn.bad { color: var(--err); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.status .sp { flex: 1; }
+.ac { position: absolute; z-index: 20; background: #252629; border: 1px solid #45474e; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.5); font: 13px/1 var(--mono); min-width: 220px; max-width: 420px; display: none; overflow: hidden; }
+.ac div { padding: 5px 10px; display: flex; gap: 10px; justify-content: space-between; white-space: nowrap; cursor: pointer; }
+.ac div.on { background: #26476e; }
+.ac small { color: var(--faint); font-family: var(--ui); }
+.tip { position: fixed; z-index: 60; background: #2f3136; border: 1px solid #50535b; border-radius: 6px; padding: 6px 9px; font: 12px/1.45 var(--mono); max-width: 480px; white-space: pre-wrap; word-break: break-all; display: none; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+
+/* ---- 3D 視窗 ---- */
+#view { position: absolute; inset: 0; outline: none; }
+#view canvas { display: block; width: 100%; height: 100%; }
+#view:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.vhint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px; background: rgba(0,0,0,.55); border-radius: 999px; font-size: 12px; color: #ddd; pointer-events: none; white-space: nowrap; transition: opacity .3s; }
+.gui-root { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.gui-root .g { position: absolute; box-sizing: border-box; overflow: visible; display: flex; }
+.gui-root .g.clip { overflow: hidden; }
+.gui-root .g.btn { pointer-events: auto; cursor: pointer; }
+.gui-root .g.btn:active { filter: brightness(.85); }
+.gui-root .g input { pointer-events: auto; width: 100%; height: 100%; background: transparent; border: 0; outline: none; font: inherit; color: inherit; text-align: inherit; padding: 0 4px; }
+.gui-root .g .tx { width: 100%; display: flex; pointer-events: none; overflow: hidden; line-height: 1.1; white-space: pre; }
+.board { position: absolute; top: 8px; right: 8px; background: rgba(20,20,22,.72); border-radius: 6px; font-size: 13px; overflow: hidden; pointer-events: none; display: none; min-width: 160px; }
+.board table { border-collapse: collapse; width: 100%; }
+.board th, .board td { padding: 4px 10px; text-align: left; }
+.board th { background: rgba(255,255,255,.08); font-weight: 600; font-size: 12px; color: #ccc; }
+.hp { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); width: 200px; height: 10px; background: rgba(0,0,0,.6); border-radius: 5px; overflow: hidden; display: none; pointer-events: none; }
+.hp i { display: block; height: 100%; background: #3fb950; transition: width .15s; }
+.dead { position: absolute; inset: 0; display: none; place-items: center; font-size: 28px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px #000; pointer-events: none; background: rgba(120,0,0,.18); }
+.prompt { position: absolute; display: none; transform: translate(-50%, -100%); background: rgba(20,20,22,.85); border-radius: 8px; padding: 6px 10px; pointer-events: none; font-size: 13px; text-align: center; white-space: nowrap; }
+.prompt b { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 2px solid #fff; border-radius: 5px; margin-right: 6px; }
+.prompt .bar2 { height: 3px; background: #fff; width: 0; margin-top: 4px; }
+.pausebanner { position: absolute; top: 8px; left: 8px; background: rgba(240,163,58,.92); color: #1b1b1b; font-weight: 700; padding: 4px 10px; border-radius: 6px; display: none; font-size: 12px; pointer-events: none; }
+.joy { position: absolute; left: 18px; bottom: 18px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.25); display: none; touch-action: none; }
+.joy i { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.45); }
+.jumpbtn { position: absolute; right: 22px; bottom: 30px; width: 70px; height: 70px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.3); display: none; font-size: 26px; color: #fff; touch-action: none; }
+.bbg { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+
+/* ---- 底部面板 ---- */
+.btabs { display: flex; align-items: center; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; overflow-x: auto; }
+.btab { padding: 7px 12px; border: 0; background: none; color: var(--dim); border-bottom: 2px solid transparent; white-space: nowrap; }
+.btab.on { color: var(--text); border-bottom-color: var(--accent); }
+.btab .cnt { background: var(--err); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 10px; margin-left: 4px; display: none; }
+.btabs .sp { flex: 1; }
+.bpane { display: none; min-height: 0; overflow: auto; }
+.bpane.on { display: block; }
+#paneOut { display: none; grid-template-rows: 1fr auto; overflow: hidden; }
+#paneOut.on { display: grid; }
+.out { overflow: auto; font: 12.5px/1.5 var(--mono); padding: 4px 0; min-height: 0; }
+.ol { padding: 1px 10px; white-space: pre-wrap; word-break: break-word; display: flex; gap: 8px; }
+.ol .ts { color: var(--faint); flex: none; }
+.ol .rep { background: #3c3f45; border-radius: 8px; padding: 0 6px; font-size: 11px; height: 17px; flex: none; }
+.ol.warn { color: var(--warn); }
+.ol.error { color: var(--err); }
+.ol.info { color: var(--info); }
+.ol.stack { color: #7fb6ff; padding-left: 26px; }
+.ol.cmd { color: var(--dim); }
+.ol.sys { color: #9a9ca3; font-style: italic; }
+.ol.link { cursor: pointer; }
+.ol.link:hover { text-decoration: underline; }
+.ol .hint { display: block; color: #ffb86b; font-family: var(--ui); font-size: 12px; margin-top: 2px; }
+.cmdbar { display: flex; border-top: 1px solid var(--line); background: #1b1c1f; }
+.cmdbar span { padding: 6px 4px 6px 10px; color: var(--accent); font-family: var(--mono); }
+.cmdbar input { flex: 1; background: transparent; border: 0; outline: none; padding: 6px; font-family: var(--mono); font-size: 13px; }
+.dbg { display: grid; grid-template-columns: 1fr 1fr; height: 100%; min-height: 0; }
+.dbg > div { overflow: auto; min-height: 0; border-right: 1px solid var(--line); }
+.vrow { display: flex; gap: 6px; padding: 2px 8px; font: 12.5px/1.5 var(--mono); white-space: nowrap; }
+.vrow .vt { width: 14px; color: var(--faint); cursor: pointer; flex: none; text-align: center; }
+.vrow .vn { color: #9cdcfe; }
+.vrow .vv { color: #ddd; overflow: hidden; text-overflow: ellipsis; }
+.vrow .vty { color: var(--faint); font-size: 11px; }
+.vrow.sec { background: #2a2c30; color: var(--faint); font-family: var(--ui); font-size: 11px; font-weight: 600; }
+.vrow .vx { margin-left: auto; border: 0; background: none; color: var(--faint); }
+.frame { padding: 4px 10px; cursor: pointer; font: 12.5px/1.5 var(--mono); border-bottom: 1px solid #2c2e33; }
+.frame:hover { background: #2f3136; }
+.frame.on { background: #26476e; }
+.frame small { color: var(--faint); }
+.watchadd { display: flex; padding: 4px 8px; gap: 6px; }
+.watchadd input { flex: 1; background: #1b1c1f; border: 1px solid #3a3c42; border-radius: 4px; padding: 3px 6px; font-family: var(--mono); }
+.bplist .frame { display: flex; gap: 8px; align-items: center; }
+
+/* ---- 對話框 ---- */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; place-items: center; z-index: 100; padding: 16px; }
+.modal.on { display: grid; }
+.dlg { background: #2b2d31; border: 1px solid #45474e; border-radius: 12px; max-width: 760px; width: 100%; max-height: 86vh; overflow: auto; padding: 18px 22px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.dlg h2 { margin: 0 0 10px; font-size: 18px; }
+.dlg h3 { margin: 16px 0 6px; font-size: 14px; color: var(--accent); }
+.dlg p, .dlg li { color: #cfd0d4; line-height: 1.65; }
+.dlg kbd { background: #1b1c1f; border: 1px solid #45474e; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-family: var(--mono); font-size: 12px; }
+.dlg code { background: #1b1c1f; border-radius: 4px; padding: 0 4px; font-family: var(--mono); font-size: 12px; color: #adf195; }
+.dlg .close { float: right; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #3c3f45; padding: 8px 16px; border-radius: 8px; z-index: 200; display: none; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.mob-only { display: none; }
+
+/* ---- 窄螢幕 ---- */
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  .app { height: auto; min-height: 100dvh; }
+  .main { display: flex; flex-direction: column; }
+  .right { height: 44vh; min-height: 260px; order: 1; }
+  .center { order: 2; height: 62vh; }
+  .bottom { order: 3; height: 300px; }
+  .left { order: 4; height: auto; display: none; grid-template-rows: 260px auto 260px; }
+  .left.mopen { display: grid; }
+  .split-v, .split-h { display: none; }
+  .mob-only { display: inline-flex; }
+  .bar { padding: 6px; gap: 2px; }
+  .tb { padding: 0 8px; }
+  .tb .lbl, .tb .k, .chk .lbl { display: none; }
+  .tb.run .lbl, .tb.stop .lbl { display: inline; }
+  .state { margin-left: 0; }
+  .logo span { display: none; }
+  .dbg { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="logo"><i></i><span>Luau 工作室</span></div>
+    <button class="tb run" id="btnRun" title="執行 (F5)">▶ <span class="lbl">執行</span><span class="k">F5</span></button>
+    <button class="tb stop" id="btnStop" title="停止 (Shift+F5)" hidden>■ <span class="lbl">停止</span></button>
+    <span class="sep"></span>
+    <button class="tb" id="btnPause" title="暫停 (F6)" disabled>⏸ <span class="lbl">暫停</span></button>
+    <button class="tb" id="btnCont" title="繼續 (F5)" disabled>⏵ <span class="lbl">繼續</span></button>
+    <button class="tb" id="btnOver" title="不進入函式，執行下一行 (F10)" disabled>↷ <span class="lbl">下一行</span><span class="k">F10</span></button>
+    <button class="tb" id="btnInto" title="進入函式 (F11)" disabled>↘ <span class="lbl">進入</span><span class="k">F11</span></button>
+    <button class="tb" id="btnOut" title="跳出函式 (Shift+F11)" disabled>↖ <span class="lbl">跳出</span></button>
+    <label class="chk" title="執行時發生錯誤就自動暫停在出錯那一行，可以看當時的變數"><input type="checkbox" id="chkBreakErr"> <span class="lbl">出錯時暫停</span></label>
+    <span class="sep"></span>
+    <div class="menu" id="menuNew"><button class="tb" id="btnNew" title="新增腳本">＋ <span class="lbl">新增腳本</span></button>
+      <div class="menu-list">
+        <button data-new="Script|ServerScriptService">📜 Script<small>伺服器腳本 → ServerScriptService</small></button>
+        <button data-new="LocalScript|StarterPlayerScripts">📄 LocalScript<small>玩家端腳本(鍵盤/滑鼠/GUI) → StarterPlayerScripts</small></button>
+        <button data-new="ModuleScript|ReplicatedStorage">📦 ModuleScript<small>模組，用 require() 載入 → ReplicatedStorage</small></button>
+      </div>
+    </div>
+    <div class="menu" id="menuEx"><button class="tb" id="btnEx">📚 <span class="lbl">範例</span></button><div class="menu-list" id="exList"></div></div>
+    <div class="menu" id="menuFile"><button class="tb" id="btnFile">💾 <span class="lbl">檔案</span></button>
+      <div class="menu-list">
+        <button id="fExportProj">匯出整個專案 (.json)<small>所有腳本打包成一個檔案，之後可再匯入</small></button>
+        <button id="fImportProj">匯入專案 (.json)</button>
+        <hr>
+        <button id="fExportLua">下載目前腳本 (.lua)<small>可直接貼進 Roblox Studio</small></button>
+        <button id="fImportLua">開啟 .lua 檔成為新腳本</button>
+        <button id="fCopy">複製目前腳本到剪貼簿</button>
+        <hr>
+        <button id="fNewProj">新的空白專案</button>
+        <button id="fClearDS">清除 DataStore 存檔</button>
+      </div>
+    </div>
+    <button class="tb" id="btnHelp">❓ <span class="lbl">說明</span></button>
+    <button class="tb mob-only" id="btnExplorer">☰ 物件</button>
+    <div class="state" id="state">編輯中</div>
+  </header>
+  <div class="main" id="main">
+    <aside class="left" id="left">
+      <div style="display:grid;grid-template-rows:auto 1fr;min-height:0">
+        <div class="ptitle">檔案總管 Explorer<span class="sp"></span><button class="ibtn" id="btnCollapse" title="全部收合">⊟</button></div>
+        <div class="tree" id="tree"></div>
+      </div>
+      <div class="split-h" id="splitP" style="grid-area:auto;height:4px"></div>
+      <div style="display:grid;grid-template-rows:auto 1fr;min-height:0">
+        <div class="ptitle">屬性 Properties<span class="sp"></span><span id="propCls" style="text-transform:none;font-weight:400"></span></div>
+        <div class="props" id="props"><div class="empty">在上方點選一個物件</div></div>
+      </div>
+    </aside>
+    <div class="split-v" id="splitL"></div>
+    <section class="center">
+      <div class="tabs" id="tabs"></div>
+      <div class="edhost" id="edhost"><div class="ac" id="ac"></div></div>
+      <div class="status" id="status"><span class="syn ok" id="syn">✓ 語法正確</span><span class="sp"></span><span id="pos">行 1，欄 1</span><span id="kind"></span></div>
+    </section>
+    <div class="split-v" id="splitR"></div>
+    <section class="right">
+      <div id="view" tabindex="0"></div>
+      <div class="gui-root" id="gui"></div>
+      <div class="board" id="board"></div>
+      <div class="hp" id="hp"><i></i></div>
+      <div class="dead" id="dead">💀 重生中…</div>
+      <div class="prompt" id="prompt"></div>
+      <div class="pausebanner" id="pauseBanner">⏸ 已暫停</div>
+      <div class="vhint" id="vhint">按 ▶ 執行開始遊戲 · 右鍵拖曳轉視角 · 滾輪縮放</div>
+      <div class="joy" id="joy"><i></i></div>
+      <button class="jumpbtn" id="jumpBtn">⤒</button>
+    </section>
+    <div class="split-h" id="splitB"></div>
+    <section class="bottom">
+      <div class="btabs">
+        <button class="btab on" data-pane="paneOut">輸出 Output<span class="cnt" id="errCnt">0</span></button>
+        <button class="btab" data-pane="paneVars">變數 / 監看</button>
+        <button class="btab" data-pane="paneStack">呼叫堆疊</button>
+        <button class="btab" data-pane="paneBps">中斷點</button>
+        <span class="sp"></span>
+        <label class="chk" title="在每行前面加上時間"><input type="checkbox" id="chkTime"> 時間</label>
+        <button class="ibtn" id="btnClear" title="清除輸出">🧹 清除</button>
+      </div>
+      <div class="bpane on" id="paneOut">
+        <div class="out" id="out"></div>
+        <div class="cmdbar"><span>&gt;</span><input id="cmd" placeholder="指令列：輸入 Luau 程式按 Enter 執行（暫停時可讀寫當下的區域變數，例如 print(x) 或 x = 5）" spellcheck="false" autocomplete="off"></div>
+      </div>
+      <div class="bpane" id="paneVars">
+        <div class="dbg">
+          <div id="vars"><div class="empty">程式暫停時，這裡會列出當下的變數。<br>在行號左邊點一下設定中斷點 🔴，再按 ▶ 執行。</div></div>
+          <div><div class="watchadd"><input id="watchIn" placeholder="新增監看運算式，例如 player.Name 或 #list" spellcheck="false"></div><div id="watches"></div></div>
+        </div>
+      </div>
+      <div class="bpane" id="paneStack"><div id="stack"><div class="empty">暫停時顯示呼叫堆疊（誰呼叫了誰）</div></div></div>
+      <div class="bpane" id="paneBps"><div id="bps" class="bplist"></div></div>
+    </section>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="help"><div class="dlg">
+  <button class="tb close" data-close>✕</button>
+  <h2>Luau 工作室 使用說明</h2>
+  <p>這是在瀏覽器裡跑的 <b>Roblox 風格 Luau 編輯器</b>：寫程式 → 按 <kbd>F5</kbd> 執行 → 右邊 3D 畫面立刻看到結果。程式不會上傳到任何地方，只存在這台電腦的瀏覽器裡。</p>
+  <h3>執行與玩</h3>
+  <ul>
+    <li><kbd>F5</kbd> 執行／繼續，<kbd>Shift</kbd>+<kbd>F5</kbd> 停止。每次執行都是全新的世界（底板 + 重生點），所有東西都由你的腳本建立。</li>
+    <li>點一下 3D 畫面後：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 走路、<kbd>空白鍵</kbd> 跳、<b>右鍵拖曳</b> 轉視角、滾輪縮放。手機有虛擬搖桿。</li>
+    <li>腳本種類：<b>Script</b>（伺服器，放 ServerScriptService）、<b>LocalScript</b>（玩家端，放 StarterPlayerScripts / StarterGui，用來處理鍵盤、GUI）、<b>ModuleScript</b>（用 <code>require()</code> 載入）。</li>
+  </ul>
+  <h3>除錯 Debug</h3>
+  <ul>
+    <li>在行號左邊點一下設 <b>中斷點 🔴</b>，程式跑到那行會停下來，黃色箭頭 ➜ 是「下一個要執行的行」。</li>
+    <li>停下來時：<kbd>F10</kbd> 下一行（不進入函式）、<kbd>F11</kbd> 進入函式、<kbd>Shift</kbd>+<kbd>F11</kbd> 跳出函式、<kbd>F5</kbd> 繼續跑到下一個中斷點。</li>
+    <li>「變數 / 監看」分頁會列出當下所有區域變數，表格可以點 ▸ 展開；滑鼠移到程式碼裡的變數上也會直接顯示值。</li>
+    <li>暫停時在底下 <b>指令列</b> 輸入 <code>x = 100</code> 可以直接改變數再繼續跑；沒暫停時指令列會在遊戲裡執行一段程式（像 Roblox 的 Command Bar）。</li>
+    <li>勾選「出錯時暫停」，發生錯誤時會停在出錯那一行，讓你看當時變數是什麼。</li>
+    <li>輸出視窗的紅色錯誤、藍色堆疊都可以點，會跳到對應的程式行；錯誤下面的橘色字是中文提示。</li>
+  </ul>
+  <h3>編輯器快捷鍵</h3>
+  <ul>
+    <li><kbd>Tab</kbd>／<kbd>Shift</kbd>+<kbd>Tab</kbd> 縮排、<kbd>Ctrl</kbd>+<kbd>/</kbd> 註解、<kbd>Ctrl</kbd>+<kbd>S</kbd> 存檔（其實隨時自動存）、<kbd>Ctrl</kbd>+<kbd>Space</kbd> 叫出自動完成。</li>
+    <li>打 <code>then</code>、<code>do</code>、<code>function()</code> 後按 Enter 會自動補上 <code>end</code>。</li>
+  </ul>
+  <h3>支援範圍</h3>
+  <p>直譯器是自己寫的 Luau：型別註記、<code>continue</code>、<code>+=</code>、字串插值 <code>`{x}`</code>、if 運算式、metatable、coroutine、string pattern 都支援。Roblox API 模擬了常用的部分：Instance / Part / Model / Folder、Vector3 / CFrame / Color3 / BrickColor / UDim2 / Enum、Players + 角色 + Humanoid、leaderstats 排行榜、Touched、TweenService、RunService、UserInputService、ContextActionService、ClickDetector、ProximityPrompt、ScreenGui / BillboardGui（TextLabel、TextButton、TextBox、Frame、UICorner、UIListLayout…）、RemoteEvent、BindableEvent、DataStore（存在瀏覽器）、Debris、Explosion、Raycast、CollectionService、HttpService JSON。</p>
+  <p>跟真的 Roblox 不同的地方：物理是簡化版（方塊碰撞、沒有旋轉翻滾）、只有一個玩家、伺服器和用戶端在同一個地方跑、沒有素材庫和模型匯入。寫好的程式可以「檔案 → 下載 .lua」或複製後貼進 Roblox Studio。</p>
+</div></div>
+<input type="file" id="fileIn" hidden>
+<script src="vendor/three.min.js"></script>
+<script src="luau.js"></script>
+<script src="roblox.js"></script>
+<script src="examples.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
